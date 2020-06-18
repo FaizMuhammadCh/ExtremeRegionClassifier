@@ -1,5 +1,5 @@
 # Extreme-Regions
-Gets the regions and timestamps of regions with extreme conditions using NetCDF files and ERA5 data.
+*Gets the regions and timestamps of regions with extreme conditions using NetCDF files and ERA5 data.*
 
 In extremeRegions.py you will have to specify the path to a directory in your computer that has NetCDF file. Along with the path, you need to give it minimum longitude, maximum longitude, maximum latitude and minimum latitude, in the same order. 
 
