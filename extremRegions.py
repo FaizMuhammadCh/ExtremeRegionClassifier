@@ -6,7 +6,11 @@ import numpy as np
 from numpy import *
 import os
 %matplotlib inline 
-
+'''
+Author: Faiz Muhammad
+Description: findExtremeRegions is the main function that calls iterates over all the NetCDF files and extracts extreme regions
+by calling other functions. Choose Variable function takes input from the user about which variable to use.
+'''
 def findExtremeRegions(directory, minLon, maxLon, minLat, maxLat):
         APIinfo = []
         P = []
