@@ -5,68 +5,95 @@ import xarray as xr
 import numpy as np
 from numpy import *
 import os
+import csv
+import sys
 %matplotlib inline 
+
 '''
 Author: Faiz Muhammad
 Description: findExtremeRegions is the main function that calls iterates over all the NetCDF files and extracts extreme regions
 by calling other functions. Choose Variable function takes input from the user about which variable to use.
 '''
-def findExtremeRegions(directory, minLon, maxLon, minLat, maxLat):
+
+#Input Variables
+source = "C:/Users/HP/Documents/Jobs/OSM/Internship/NetCDFfiles/files"
+destination = "C:/Users/HP/Documents/Jobs/OSM/Internship/NetCDFfiles/files/output"
+waveFileName = "waveResults.txt" #output file 1
+windFileName = "windResults.txt"#output file 2
+fileCount = 3 #number of latest files you want to select from the source folder
+varFlag = 1 #varFlag == 1 when using wave variable and 0 when using wind variable
+variable = 'WVDIR_meansealevel' #add the name of your variable
+beaufortNum = 6
+
+#defining beaufort scale
+bfScale = {}
+bfScale[6] = [13.8, 4]
+bfScale[7] = [17.1, 5.5]
+bfScale[8] = [20.7, 7.5]
+bfScale[9] = [24.4, 10]
+bfScale[10] = [28.4, 12.5]
+bfScale[11] = [32.6, 16]
+bfScale[12] = [32.7, 14]
+        
+def findExtremeRegions(directory, outputLoc, wave, wind, varflag, variable,fileCount,beaufortNum, minLon, maxLon, minLat, maxLat):
+        counter = fileCount
         APIinfo = []
         P = []
-        for filename in os.listdir(directory): #looping through the directory
-            if filename.endswith(".nc"):
+        bs = 0
+        f = open(os.path.join(outputLoc, wind), "a+")
+        f.write("Index number; Min Latitude; Max Latitude; Min Longitude; Max Longitude; Time\n")
+        
+        g = open(os.path.join(outputLoc, wave), "a+")
+        g.write("Index number; Min Latitude; Max Latitude; Min Longitude; Max Longitude; Time\n")
+        for filename in sorted(os.listdir(directory), reverse = True): #looping through the directory
+            if filename.endswith(".nc") and counter > 0:
                 print("File Name = ", filename)
-                ds, var = chooseVar(os.path.join(directory, filename))
-                bs = ds
-                if var != 0:
-                    p = ExtremeValuesRegions(ds, var, minLon, maxLon, minLat, maxLat) #finding extreme values
-                    P.append(p)
-                    APIinfo.append(getDetails(p)) #appending API information for a dataset
+                ds, var = chooseVar(os.path.join(directory, filename), variable)
+                if ('expver' not in ds.dims): 
+                    bs = ds
+                    if var != 0:
+                        p = ExtremeValuesRegions(ds, varflag, var,beaufortNum, minLon, maxLon, minLat, maxLat) #finding extreme values
+                        P.append(p)
+                        if (varflag == 1):
+                            APIinfo.append(getDetails(p, g, outputLoc)) #appending API information for a dataset
+                        elif (varflag == 0):
+                            APIinfo.append(getDetails(p, f, outputLoc))
+                    else:
+                        print("Variable Not Found")
+                    counter -= 1
         return APIinfo,P, bs
 
-def chooseVar(path):
-        while(1):
-            ds = xr.open_dataset(path)
-            count = 1
-            for varname in ds:
-                print(count," ",varname)
-                count = count + 1
-            print(count,"  skip") #giving option to skip the dataset
-            value = input("Choose a number:\n")
-            print(f'You entered {value}')
-            counter = 1
-            if (int(value) == count): #selecting the variable
-                return ds, 0
-            for varname in ds:
-                if (counter == int(value)): 
-                    var = varname
-                    break
-                else:
-                    counter += 1
-            if (int(value) > count or int(value) < 1): #looping if the number entered is invalid
-                print("Invalid Number. Please enter a valid number.")
-            else:
-                break
+def chooseVar(path, variable):
+        ds = xr.open_dataset(path)
+        Flag = False
+        for varname in ds:
+            if varname == variable:
+                Flag = True
+                var = varname
+                break   
+        if Flag == True:
+            return ds, var
+        else:
+            return ds, 0
     
-        return ds, var    
-    
-def ExtremeValuesRegions(ds,varname, minLon, maxLon, minLat, maxLat): #calculating extreme values on beaufort 8 or z-vals
+def ExtremeValuesRegions(ds, varflag, varname,bfNum, minLon, maxLon, minLat, maxLat): #calculating extreme values on beaufort 8 or z-vals
+        windThresh, waveThresh = getbeaufortScale(bfNum, bfScale)
         var = ds[varname]
         var_denseVessels = var.sel(longitude = slice(minLon, maxLon), latitude = slice (minLat, maxLat)) #need to have global data
-        if(varname == "swh"):#if the variable selected is significant wave height
-            z, threshold = getZvals(var_denseVessels, 7) #getting z values and threshold in z scale for beaufort 8
-        elif(varname == "u10"):
+        if(varflag == 1):#if the variable selected is significant wave height
+            z, threshold = getZvals(var_denseVessels, waveThresh) #getting z values and threshold in z scale for beaufort 8 = 7
+        elif(varflag == 0 and varname == "u10"):
             var2 = ds["v10"]
             var2_denseVessels = var2.sel(longitude = slice(minLon, maxLon), latitude = slice (minLat, maxLat))
             magnitudeWind = getMagnitude(var_denseVessels,var2_denseVessels)
-            z, threshold = getZvals(magnitudeWind, 20.7) #getting z values and threshold in z scale for beaufort 8
-        elif(varname == "v10"):
+            z, threshold = getZvals(magnitudeWind, windThresh) #getting z values and threshold in z scale for beaufort 8 = 20.7
+        elif(varflag == 0 and varname == "v10"):
             var2 = ds["u10"]
             var2_denseVessels = var2.sel(longitude = slice(minLon, maxLon), latitude = slice (minLat, maxLat))
             magnitudeWind = getMagnitude(var_denseVessels,var2_denseVessels)
-            z, threshold = getZvals(magnitudeWind, 20.7) #getting z values and threshold in z scale for beaufort 8
+            z, threshold = getZvals(magnitudeWind, windThresh) #getting z values and threshold in z scale for beaufort 8 = 20.7
         else:
+            print("Default Condition: No variable found")
             z, trash = getZvals(var_denseVessels, 0)
             threshold = getThreshold_percentile(z, 0.95) #returns the value above which top 5% of z values are
         maskRegion(z, threshold) #converts the regions into binary maps
@@ -88,11 +115,11 @@ def getZvals(var_denseVessels, beaufort_threshold):
             var_denseVessels_std = var_denseVessels.std(dim = ('time')).values
             count = 0
             for i in range (0, len(var_denseVessels.time)): #computing z values for each timestamp in a dataset
-                if (var_denseVessels[i][0].sum() > 0): 
+                if (var_denseVessels[i].sum() > 0): 
                     z[count] = (var_denseVessels[i] - var_denseVessels_mean)/var_denseVessels_std
-                    count = count + 1
+                    count = count + 1        
         if beaufort_threshold != 0:
-            beaufort_threshold = (beaufort_threshold - var_denseVessels_mean.mean())/var_denseVessels_std.mean() #beaufort threshold being standardin
+            beaufort_threshold = (beaufort_threshold - np.nanmean(var_denseVessels_mean))/np.nanmean(var_denseVessels_std) #beaufort threshold being standardin
         return z, beaufort_threshold
     
 def getMagnitude(u10, v10):
@@ -115,55 +142,78 @@ def maskRegion(z, threshold):
             result[result < threshold] = 0
             z[k].values = result #storing binary maps in z
             
-def getDetails(p):
+def getDetails(p, f,outputLoc):
         APIinfo = []
+        percentage = 0
         for i in range (0, len(p)):
             if (p[i].sum().values > 0):
                 minLat, maxLat, minLon, maxLon = getMinMaxLatLon(p[i])
                 if (minLat == -1 and maxLat == -1 and minLon == -1 and maxLon == -1):
-                     print("No Extreme Region")
+                     pass
                 else:
                     APIinfo.append((i,minLat,maxLat,minLon,maxLon,p[i].time.values))
-                    print ("Index number = ", i, "Min Latitude = ", minLat, "Max Latitude = ", maxLat, "Min Longitude = ", 
-                       minLon, "Max Longitude = ", maxLon, "Time = ", p[i].time.values)
+                    f.write(str(i)+ "; "+ str(minLat)+ "; "+ str(maxLat)+ "; "+ str(minLon)+ "; "+ str(maxLon)+ "; "+ str(p[i].time.values)+'\n')
             else:
-                print("No Extreme Region")
+                pass
         return APIinfo
 
 def getMinMaxLatLon(z):
         lat = []
         lon = []
-        if z.latitude.size < 2 or z.longitude.size < 2: #if both latitude and longitude are arrays
-            if (z.latitude.size < 2 and z.longitude.size < 2 ):
-                minLon = z.longitude.values
-                minLat = z.latitude.values
+        if hasattr(ds, 'longitude'):
+            lenlong = len(z.longitude)
+            lenlat = len(z.latitude)
+            latsize = z.latitude.size
+            lonsize = z.longitude.size
+            latvalues = z.latitude.values
+            lonvalues = z.longitude.values
+            lon0value = z.longitude[0].values
+            lon1value = z.longitude[1].values
+            lat0value = z.latitude[0].values
+            lat1value = z.latitude[1].values
+         else:
+            lenlong = len(z.lon)
+            lenlat = len(z.lat)
+            latsize = z.lat.size
+            lonsize = z.lon.size
+            latvalues = z.lat.values
+            lonvalues = z.lon.values
+            lon0value = z.lon[0].values
+            lon1value = z.lon[1].values
+            lat0value = z.lat[0].values
+            lat1value = z.lat[1].values
+        
+        if latsize < 2 or lonsize < 2: #if both latitude and longitude are arrays
+            if (latsize < 2 and lonsize < 2 ):
+                minLon = lonvalues
+                minLat = latvalues
                 if(z[0][0] == 100):
                     lat.append(minLat)
                     lon.append(maxLat)
-            elif (z.latitude.size < 2): # If only longitude is an array
-                minLat = z.latitude.values
-                minLon = z.longitude[0].values
-                lonDif = abs(minLon - z.longitude[1].values) # to see the difference between 1st and 2nd index values
-                for i in range(0, len(z.longitude)):
+            elif (latsize < 2): # If only longitude is an array
+                minLat = latvalues
+                minLon = lon0value
+                lonDif = abs(minLon - lon1value) # to see the difference between 1st and 2nd index values
+                for i in range(0, lenlong):
                     if z[i] == 100:
                         lat.append(minLat)
                         lon.append(minLon + (i*lonDif))
-            elif (z.longitude.size < 2): # if only latitude is an array
+            elif (lonsize < 2): # if only latitude is an array
                 
-                minLat = z.latitude[0].values
-                minLon = z.longitude.values
-                latDif = abs(minLat - z.latitude[1].values)
-                for i in range(0, len(z.latitude)):
+                minLat = lat0value
+                minLon = lonvalues
+                latDif = abs(minLat - lat1value)
+                for i in range(0, lenlong):
                     if z[i] == 100:
                         lat.append(minLat - (i*latDif))
                         lon.append(minLon)      
         else: #if both longitude and latitude are not arrays
-            minLon = z.longitude[0].values
-            minLat = z.latitude[0].values
-            latDif = abs(minLat - z.latitude[1].values)
-            lonDif = abs(minLon - z.longitude[1].values)
-            for i in range(0, len(z.latitude)):
-                for j in range (0, len(z.longitude)): 
+            minLon = lon0value
+            minLat = lat0value
+            latDif = abs(minLat - lat1value)
+            lonDif = abs(minLon - lon1value)
+            for i in range(0, lenlat):
+                for j in range (0, lenlong): 
                     if (z[i][j] == 100):
                         lat.append(minLat - (i*0.5))
                         lon.append(minLon + (j*0.5)) 
@@ -171,5 +221,13 @@ def getMinMaxLatLon(z):
             return -1, -1, -1, -1
         else:    
             return min(lat), max(lat), min(lon), max(lon)
-
-APIdet, P, bs = findExtremeRegions("C:/Users/HP/Documents/NetCDFfiles/FOI",200,210,50,40) #minLon, maxLon, maxlat and minLat
+        
+def getbeaufortScale(number, bfScale):
+        if number in range(6, 13):
+            return bfScale[number]
+        else:
+            print("Taking default beaufort value = 8")
+            return bfScale[8]
+        
+#call main function
+APIdet, P, bs = findExtremeRegions(source,destination,waveFileName,windFileName,varFlag, variable,fileCount,beaufortNum,-180, 40,-77.5,-20) #minLon, maxLon, maxlat and minLat
