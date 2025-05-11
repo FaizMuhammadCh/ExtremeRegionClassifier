@@ -16,8 +16,8 @@ by calling other functions. Choose Variable function takes input from the user a
 '''
 
 #Input Variables
-source = "C:/Users/HP/Documents/Jobs/OSM/Internship/NetCDFfiles/files"
-destination = "C:/Users/HP/Documents/Jobs/OSM/Internship/NetCDFfiles/files/output"
+source = "./NetCDFfiles/files"
+destination = "./NetCDFfiles/files/output"
 waveFileName = "waveResults.txt" #output file 1
 windFileName = "windResults.txt"#output file 2
 fileCount = 3 #number of latest files you want to select from the source folder
